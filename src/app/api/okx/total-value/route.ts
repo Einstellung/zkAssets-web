@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import axios from 'axios';
 
 export async function GET(request: NextRequest) {
   const apiKey = process.env.OKX_API_KEY;
@@ -40,31 +41,18 @@ export async function GET(request: NextRequest) {
     'OK-ACCESS-SIGN': signature,
     'OK-ACCESS-TIMESTAMP': timestamp,
     'OK-ACCESS-PASSPHRASE': passphrase,
-    // 'OK-ACCESS-PROJECT': projectId
+    'OK-ACCESS-PROJECT': projectId
   };
 
   try {
-    const response = await fetch(`${baseUrl}${requestPath}`, {
-      method: method,
+    const response = await axios.get(`${baseUrl}${requestPath}`, {
       headers: headers
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(response.data);
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error('Detailed error:', error);
-      if ('cause' in error && error.cause) {
-        console.error('Error cause:', error.cause);
-      }
-      return NextResponse.json({ error: 'Failed to fetch data from OKX', details: error.message }, { status: 500 });
-    } else {
-      console.error('An unknown error occurred:', error);
-      return NextResponse.json({ error: 'An unknown error occurred' }, { status: 500 });
-    }
+    const errorMessage = axios.isAxiosError(error) ? error.message : 'An unknown error occurred';
+    console.error('Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch data from OKX', details: errorMessage }, { status: 500 });
   }
 }
