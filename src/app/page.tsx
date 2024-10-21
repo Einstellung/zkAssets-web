@@ -1,23 +1,7 @@
 "use client"
 import Image from "next/image";
-import { useEffect } from "react";
-import axios from 'axios';
 
 export default function Home() {
-  useEffect(() => {
-    const fetchData = async () => {
-      const url = 'https://www.okx.com/api/v5/dex/aggregator/all-tokens?chainId=1';
-
-      try {
-        const response = await axios.get(url);
-        console.log('Fetched data:', response.data);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
-    };
-
-    fetchData();
-  }, []); // 空依赖数组表示只在组件挂载时运行
 
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
