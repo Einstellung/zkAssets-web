@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing API credentials or private key' }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const address = searchParams.get('address');
+  // 从请求头中获取地址信息
+  const address = request.headers.get('Address');
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
     return NextResponse.json({ error: 'Invalid or missing Ethereum address' }, { status: 400 });
