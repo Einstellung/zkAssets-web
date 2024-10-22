@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import axios from 'axios';
 import { ec as EC } from 'elliptic';
+import { keccak256 } from 'ethereum-cryptography/keccak';
+import { utf8ToBytes } from 'ethereum-cryptography/utils';
 
 const ec = new EC('secp256k1');
 
@@ -40,10 +42,11 @@ async function fetchTotalValueByAddress(address: string, apiKey: string, secretK
   }
 }
 
-function signData(data: string, privateKey: string): string {
+function signData(data: string, privateKey: string): [string, string] {
   const key = ec.keyFromPrivate(privateKey, 'hex');
-  const signature = key.sign(data);
-  return signature.toDER('hex');
+  const messageHash = keccak256(utf8ToBytes(data));
+  const signature = key.sign(messageHash);
+  return [signature.r.toString(16), signature.s.toString(16)];
 }
 
 export async function GET(request: NextRequest) {
@@ -71,7 +74,10 @@ export async function GET(request: NextRequest) {
     
     // Combine integerValue and address for signing
     const dataToSign = integerValue + address;
-    const signature = signData(dataToSign, privateKey);
+    const [r, s] = signData(dataToSign, privateKey);
+
+    // Calculate the data hash using keccak256
+    const dataHash = Buffer.from(keccak256(utf8ToBytes(dataToSign))).toString('hex');
 
     return NextResponse.json({
       code: "0",
@@ -79,7 +85,8 @@ export async function GET(request: NextRequest) {
       data: [
         {
           totalValue: integerValue,
-          signature: signature
+          signature: { r, s },
+          dataHash: dataHash
         }
       ]
     });
