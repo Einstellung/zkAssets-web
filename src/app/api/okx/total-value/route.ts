@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import axios from 'axios';
-import { ec as EC } from 'elliptic';
-import { keccak256 } from 'ethereum-cryptography/keccak';
-import { utf8ToBytes } from 'ethereum-cryptography/utils';
-
-const ec = new EC('secp256k1');
+import { ecsign, keccak256 } from 'ethereumjs-util';
 
 async function fetchTotalValueByAddress(address: string, apiKey: string, secretKey: string, passphrase: string, projectId: string) {
   const baseUrl = 'https://www.okx.com';
@@ -43,10 +39,20 @@ async function fetchTotalValueByAddress(address: string, apiKey: string, secretK
 }
 
 function signData(data: string, privateKey: string): [string, string] {
-  const key = ec.keyFromPrivate(privateKey, 'hex');
-  const messageHash = keccak256(utf8ToBytes(data));
-  const signature = key.sign(messageHash);
-  return [signature.r.toString(16), signature.s.toString(16)];
+  // Remove '0x' prefix if present
+  const privKey = privateKey.replace('0x', '');
+  
+  // Create message hash
+  const messageHash = keccak256(Buffer.from(data));
+  
+  // Sign using ethereumjs implementation
+  const signature = ecsign(messageHash, Buffer.from(privKey, 'hex'));
+  
+  // Pad r and s to 64 characters (32 bytes)
+  const r = signature.r.toString('hex').padStart(64, '0');
+  const s = signature.s.toString('hex').padStart(64, '0');
+  
+  return [r, s];
 }
 
 export async function GET(request: NextRequest) {
@@ -54,13 +60,12 @@ export async function GET(request: NextRequest) {
   const secretKey = process.env.OKX_SECRET_KEY;
   const passphrase = process.env.OKX_PASSPHRASE;
   const projectId = process.env.OKX_PROJECT_ID;
-  const privateKey = process.env.ECDSA_PRIVATE_KEY; // Assume you have this in your environment variables
+  const privateKey = process.env.ECDSA_PRIVATE_KEY;
 
   if (!apiKey || !secretKey || !passphrase || !projectId || !privateKey) {
     return NextResponse.json({ error: 'Missing API credentials or private key' }, { status: 500 });
   }
 
-  // 从请求头中获取地址信息
   const address = request.headers.get('Address');
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -77,7 +82,7 @@ export async function GET(request: NextRequest) {
     const [r, s] = signData(dataToSign, privateKey);
 
     // Calculate the data hash using keccak256
-    const dataHash = Buffer.from(keccak256(utf8ToBytes(dataToSign))).toString('hex');
+    const dataHash = keccak256(Buffer.from(dataToSign)).toString('hex');
 
     return NextResponse.json({
       code: "0",
