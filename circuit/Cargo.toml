@@ -1,9 +1,0 @@
-[workspace]
-members = [
-  "maingate",
-  "integer",
-  "halo2wrong",
-  "ecc",
-  "ecdsa",
-]
-resolver = "2"
