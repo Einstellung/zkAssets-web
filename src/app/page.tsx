@@ -1,10 +1,38 @@
 "use client"
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import Script from "next/script";
 
 export default function Home() {
+  const [proof, setProof] = useState<any>(null);
+  const [verificationResult, setVerificationResult] = useState<boolean | null>(null);
+
+  const calculateProof = async () => {
+    try {
+      // @ts-ignore - snarkjs will be loaded via CDN
+      const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+        { a: 3, b: 11 },
+        "/circuit.wasm",
+        "/circuit_final.zkey"
+      );
+
+      setProof(proof);
+
+      const vkeyResponse = await fetch("/verification_key.json");
+      const vkey = await vkeyResponse.json();
+
+      // @ts-ignore - snarkjs will be loaded via CDN
+      const res = await snarkjs.groth16.verify(vkey, publicSignals, proof);
+      setVerificationResult(res);
+    } catch (error) {
+      console.error("Error calculating proof:", error);
+    }
+  };
 
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
+      <Script src="https://cdn.jsdelivr.net/npm/snarkjs@0.7.3/build/snarkjs.min.js" />
+      
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
         <Image
           className="dark:invert"
@@ -49,6 +77,27 @@ export default function Home() {
           >
             Read our docs
           </a>
+        </div>
+
+        <div className="flex flex-col gap-4 w-full max-w-2xl">
+          <button
+            onClick={calculateProof}
+            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
+          >
+            Create Proof
+          </button>
+
+          {proof && (
+            <pre className="bg-black/[.05] dark:bg-white/[.06] p-4 rounded overflow-auto">
+              <code>Proof: {JSON.stringify(proof, null, 2)}</code>
+            </pre>
+          )}
+
+          {verificationResult !== null && (
+            <pre className="bg-black/[.05] dark:bg-white/[.06] p-4 rounded">
+              <code>Result: {JSON.stringify(verificationResult)}</code>
+            </pre>
+          )}
         </div>
       </main>
       <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
