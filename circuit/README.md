@@ -1,0 +1,1 @@
+The `input.json` and `final_21.ptau` files won't be uploaded, but don't forget to add these files to the `circuit` folder. You can download the `.ptau` file from this [link](https://github.com/iden3/snarkjs#7-prepare-phase-2).
