@@ -1,4 +1,3 @@
-*.ptau
-/node_modules
-/generator
-input.json
+/target
+Cargo.lock
+.vscode
