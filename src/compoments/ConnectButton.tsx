@@ -1,3 +1,4 @@
+import React from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 export default function ConnectButtonRain() {
@@ -28,7 +29,7 @@ export default function ConnectButtonRain() {
         }) => {
           return (
             <div className="relative cursor-pointer" onClick={fun}>
-              <div className="top-1/4 left-2 absolute font-black text-white">
+              <div className="top-1/4 left-2 absolute font-black text-black">
                 {text}
               </div>
             </div>

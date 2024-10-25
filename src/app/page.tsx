@@ -1,6 +1,7 @@
 "use client";
-
+import React from "react";
 import ConnectBtn from "@/compoments/ConnectButton";
+import SignOwnershipBtn from "@/compoments/SignOwnershipBtn";
 
 export default function Home() {
   return (
@@ -8,6 +9,7 @@ export default function Home() {
       <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
         <div className="w-fit border border-white rounded-xl py-2 px-4">
           <ConnectBtn />
+          <SignOwnershipBtn />
         </div>
       </div>
     </main>
