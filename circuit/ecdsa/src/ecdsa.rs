@@ -143,6 +143,8 @@ mod tests {
     use crate::halo2;
     use crate::integer;
     use crate::maingate;
+    use crate::utils::get_test_public_key;
+    use crate::utils::hex_to_scalar;
     use ecc::integer::Range;
     use ecc::maingate::big_to_fe;
     use ecc::maingate::fe_to_big;
@@ -355,5 +357,62 @@ mod tests {
         run::<Secp256k1, BnScalar>();
         run::<Secp256k1, PastaFp>();
         run::<Secp256k1, PastaFq>();
+    }
+
+    #[test]
+    fn test_my_verifier() {
+        fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
+            let x_big = fe_to_big(x);
+            big_to_fe(x_big)
+        }
+
+        fn run<C: CurveAffine, N: FromUniformBytes<64> + Ord>() {
+            let g = C::generator();
+
+            // let private_key = get_test_private_key();
+            let message_hash = String::from("3dce4c209ac60432a2ea09df4f6ebbea491a6cbbf1119c1e27ca8e9b5a1d7fc5");
+            let signature_r = String::from("c48fbc06d80bdc4a04ede1bb9365fd08f4b5067147233284e3bd89242be47fb0");
+            let signature_s = String::from("591e1fa44b00de3b04296b1ee8b6513b562f410cad76c21c57c8525afffab430");
+
+            let public_key = get_test_public_key::<C>().unwrap();
+
+            let msg_hash = hex_to_scalar::<C>(&message_hash).unwrap();
+
+            let r = hex_to_scalar::<C>(&signature_r).unwrap();
+            let s = hex_to_scalar::<C>(&signature_s).unwrap();
+
+            // Sanity check. Ensure we construct a valid signature. So lets verify it
+            {
+                let s_inv = s.invert().unwrap();
+                let u_1 = msg_hash * s_inv;
+                let u_2 = r * s_inv;
+                let r_point = ((g * u_1) + (public_key * u_2))
+                    .to_affine()
+                    .coordinates()
+                    .unwrap();
+                let x_candidate = r_point.x();
+                let r_candidate = mod_n::<C>(*x_candidate);
+                assert_eq!(r, r_candidate);
+            }
+
+            let aux_generator = C::CurveExt::random(OsRng).to_affine();
+            let circuit = TestCircuitEcdsaVerify::<C, N> {
+                public_key: Value::known(public_key),
+                signature: Value::known((r, s)),
+                msg_hash: Value::known(msg_hash),
+                aux_generator,
+                window_size: 4,
+                ..Default::default()
+            };
+            let instance = vec![vec![]];
+            mock_prover_verify(&circuit, instance);
+        }
+
+        use crate::curves::bn256::Fr as BnScalar;
+        // use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+        run::<Secp256k1, BnScalar>();
+        // run::<Secp256k1, PastaFp>();
+        // run::<Secp256k1, PastaFq>();
     }
 }
