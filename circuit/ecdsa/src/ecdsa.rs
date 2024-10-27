@@ -1,7 +1,17 @@
+use std::marker::PhantomData;
+
 use super::integer::{IntegerChip, IntegerConfig};
 use crate::halo2;
 use crate::integer;
 use crate::maingate;
+use ecc::halo2::circuit::Layouter;
+use ecc::halo2::circuit::SimpleFloorPlanner;
+use ecc::halo2::plonk::Circuit;
+use ecc::halo2::plonk::ConstraintSystem;
+use ecc::integer::Range;
+use ecc::maingate::MainGate;
+use ecc::maingate::RangeChip;
+use ecc::maingate::RangeInstructions;
 use ecc::maingate::RegionCtx;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::CurveAffine;
@@ -137,162 +147,154 @@ impl<E: CurveAffine, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_
     }
 }
 
+const BIT_LEN_LIMB: usize = 68;
+const NUMBER_OF_LIMBS: usize = 4;
+
+#[derive(Clone, Debug)]
+struct TestCircuitEcdsaVerifyConfig {
+    main_gate_config: MainGateConfig,
+    range_config: RangeConfig,
+}
+
+impl TestCircuitEcdsaVerifyConfig {
+    pub fn new<C: CurveAffine, N: PrimeField>(meta: &mut ConstraintSystem<N>) -> Self {
+        let (rns_base, rns_scalar) =
+            GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
+        let main_gate_config = MainGate::<N>::configure(meta);
+        let mut overflow_bit_lens: Vec<usize> = vec![];
+        overflow_bit_lens.extend(rns_base.overflow_lengths());
+        overflow_bit_lens.extend(rns_scalar.overflow_lengths());
+        let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS];
+
+        let range_config = RangeChip::<N>::configure(
+            meta,
+            &main_gate_config,
+            composition_bit_lens,
+            overflow_bit_lens,
+        );
+        TestCircuitEcdsaVerifyConfig {
+            main_gate_config,
+            range_config,
+        }
+    }
+
+    pub fn ecc_chip_config(&self) -> EccConfig {
+        EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
+
+    pub fn config_range<N: PrimeField>(
+        &self,
+        layouter: &mut impl Layouter<N>,
+    ) -> Result<(), Error> {
+        let range_chip = RangeChip::<N>::new(self.range_config.clone());
+        range_chip.load_table(layouter)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
+struct TestCircuitEcdsaVerify<E: CurveAffine, N: PrimeField> {
+    public_key: Value<E>,
+    signature: Value<(E::Scalar, E::Scalar)>,
+    msg_hash: Value<E::Scalar>,
+
+    aux_generator: E,
+    window_size: usize,
+    _marker: PhantomData<N>,
+}
+
+impl<E: CurveAffine, N: PrimeField> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
+    type Config = TestCircuitEcdsaVerifyConfig;
+    type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+        TestCircuitEcdsaVerifyConfig::new::<E, N>(meta)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<N>,
+    ) -> Result<(), Error> {
+        let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
+            config.ecc_chip_config(),
+        );
+
+        layouter.assign_region(
+            || "assign aux values",
+            |region| {
+                let offset = 0;
+                let ctx = &mut RegionCtx::new(region, offset);
+
+                ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
+                ecc_chip.assign_aux(ctx, self.window_size, 2)?;
+                Ok(())
+            },
+        )?;
+
+        let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+        let scalar_chip = ecc_chip.scalar_field_chip();
+
+        layouter.assign_region(
+            || "region 0",
+            |region| {
+                let offset = 0;
+                let ctx = &mut RegionCtx::new(region, offset);
+
+                let r = self.signature.map(|signature| signature.0);
+                let s = self.signature.map(|signature| signature.1);
+                let integer_r = ecc_chip.new_unassigned_scalar(r);
+                let integer_s = ecc_chip.new_unassigned_scalar(s);
+                let msg_hash = ecc_chip.new_unassigned_scalar(self.msg_hash);
+
+                let r_assigned =
+                    scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
+                let s_assigned =
+                    scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
+                let sig = AssignedEcdsaSig {
+                    r: r_assigned,
+                    s: s_assigned,
+                };
+
+                let pk_in_circuit = ecc_chip.assign_point(ctx, self.public_key)?;
+                let pk_assigned = AssignedPublicKey {
+                    point: pk_in_circuit,
+                };
+                let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
+                ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+            },
+        )?;
+
+        config.config_range(&mut layouter)?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
     use crate::halo2;
-    use crate::integer;
     use crate::maingate;
     use crate::utils::get_test_public_key;
     use crate::utils::hex_to_scalar;
-    use ecc::integer::Range;
     use ecc::maingate::big_to_fe;
     use ecc::maingate::fe_to_big;
-    use ecc::maingate::RegionCtx;
-    use ecc::{EccConfig, GeneralEccChip};
     use halo2::arithmetic::CurveAffine;
-    use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
+    use halo2::circuit::Value;
     use halo2::halo2curves::{
-        ff::{Field, FromUniformBytes, PrimeField},
+        ff::{Field, FromUniformBytes},
         group::{Curve, Group},
     };
-    use halo2::plonk::{Circuit, ConstraintSystem, Error};
-    use integer::IntegerInstructions;
     use maingate::mock_prover_verify;
-    use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
     use rand_core::OsRng;
-    use std::marker::PhantomData;
-
-    const BIT_LEN_LIMB: usize = 68;
-    const NUMBER_OF_LIMBS: usize = 4;
-
-    #[derive(Clone, Debug)]
-    struct TestCircuitEcdsaVerifyConfig {
-        main_gate_config: MainGateConfig,
-        range_config: RangeConfig,
-    }
-
-    impl TestCircuitEcdsaVerifyConfig {
-        pub fn new<C: CurveAffine, N: PrimeField>(meta: &mut ConstraintSystem<N>) -> Self {
-            let (rns_base, rns_scalar) =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
-            let main_gate_config = MainGate::<N>::configure(meta);
-            let mut overflow_bit_lens: Vec<usize> = vec![];
-            overflow_bit_lens.extend(rns_base.overflow_lengths());
-            overflow_bit_lens.extend(rns_scalar.overflow_lengths());
-            let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS];
-
-            let range_config = RangeChip::<N>::configure(
-                meta,
-                &main_gate_config,
-                composition_bit_lens,
-                overflow_bit_lens,
-            );
-            TestCircuitEcdsaVerifyConfig {
-                main_gate_config,
-                range_config,
-            }
-        }
-
-        pub fn ecc_chip_config(&self) -> EccConfig {
-            EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-        }
-
-        pub fn config_range<N: PrimeField>(
-            &self,
-            layouter: &mut impl Layouter<N>,
-        ) -> Result<(), Error> {
-            let range_chip = RangeChip::<N>::new(self.range_config.clone());
-            range_chip.load_table(layouter)?;
-
-            Ok(())
-        }
-    }
-
-    #[derive(Default, Clone)]
-    struct TestCircuitEcdsaVerify<E: CurveAffine, N: PrimeField> {
-        public_key: Value<E>,
-        signature: Value<(E::Scalar, E::Scalar)>,
-        msg_hash: Value<E::Scalar>,
-
-        aux_generator: E,
-        window_size: usize,
-        _marker: PhantomData<N>,
-    }
-
-    impl<E: CurveAffine, N: PrimeField> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
-        type Config = TestCircuitEcdsaVerifyConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-        #[cfg(feature = "circuit-params")]
-        type Params = ();
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitEcdsaVerifyConfig::new::<E, N>(meta)
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<N>,
-        ) -> Result<(), Error> {
-            let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
-                config.ecc_chip_config(),
-            );
-
-            layouter.assign_region(
-                || "assign aux values",
-                |region| {
-                    let offset = 0;
-                    let ctx = &mut RegionCtx::new(region, offset);
-
-                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 2)?;
-                    Ok(())
-                },
-            )?;
-
-            let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
-            let scalar_chip = ecc_chip.scalar_field_chip();
-
-            layouter.assign_region(
-                || "region 0",
-                |region| {
-                    let offset = 0;
-                    let ctx = &mut RegionCtx::new(region, offset);
-
-                    let r = self.signature.map(|signature| signature.0);
-                    let s = self.signature.map(|signature| signature.1);
-                    let integer_r = ecc_chip.new_unassigned_scalar(r);
-                    let integer_s = ecc_chip.new_unassigned_scalar(s);
-                    let msg_hash = ecc_chip.new_unassigned_scalar(self.msg_hash);
-
-                    let r_assigned =
-                        scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
-                    let s_assigned =
-                        scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
-                    let sig = AssignedEcdsaSig {
-                        r: r_assigned,
-                        s: s_assigned,
-                    };
-
-                    let pk_in_circuit = ecc_chip.assign_point(ctx, self.public_key)?;
-                    let pk_assigned = AssignedPublicKey {
-                        point: pk_in_circuit,
-                    };
-                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
-                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
-                },
-            )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
-        }
-    }
+    use super::*;
 
     #[test]
     fn test_ecdsa_verifier() {
