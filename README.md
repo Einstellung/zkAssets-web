@@ -37,3 +37,5 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 
 Account assets valuation capabilities come from [OKX](https://www.okx.com/zh-hans/web3/build/docs/waas/walletapi-api-total-token-value-address)
+
+Halo2 params download from [here](https://github.com/han0110/halo2-kzg-srs?tab=readme-ov-file)
