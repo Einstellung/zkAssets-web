@@ -1,0 +1,12 @@
+{
+  "name": "ecdsa",
+  "version": "0.1.0",
+  "files": [
+    "ecdsa_bg.wasm",
+    "ecdsa.js",
+    "ecdsa.d.ts"
+  ],
+  "module": "ecdsa.js",
+  "types": "ecdsa.d.ts",
+  "sideEffects": false
+}

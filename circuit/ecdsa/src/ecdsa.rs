@@ -151,7 +151,7 @@ const BIT_LEN_LIMB: usize = 68;
 const NUMBER_OF_LIMBS: usize = 4;
 
 #[derive(Clone, Debug)]
-struct TestCircuitEcdsaVerifyConfig {
+pub struct TestCircuitEcdsaVerifyConfig {
     main_gate_config: MainGateConfig,
     range_config: RangeConfig,
 }
@@ -194,14 +194,14 @@ impl TestCircuitEcdsaVerifyConfig {
 }
 
 #[derive(Default, Clone)]
-struct TestCircuitEcdsaVerify<E: CurveAffine, N: PrimeField> {
-    public_key: Value<E>,
-    signature: Value<(E::Scalar, E::Scalar)>,
-    msg_hash: Value<E::Scalar>,
+pub struct TestCircuitEcdsaVerify<E: CurveAffine, N: PrimeField> {
+    pub public_key: Value<E>,
+    pub signature: Value<(E::Scalar, E::Scalar)>,
+    pub msg_hash: Value<E::Scalar>,
 
-    aux_generator: E,
-    window_size: usize,
-    _marker: PhantomData<N>,
+    pub aux_generator: E,
+    pub window_size: usize,
+    pub _marker: PhantomData<N>,
 }
 
 impl<E: CurveAffine, N: PrimeField> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
@@ -410,11 +410,9 @@ mod tests {
             mock_prover_verify(&circuit, instance);
         }
 
+        // BN256 is actually BN254 curve, just different naming convention
         use crate::curves::bn256::Fr as BnScalar;
-        // use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
         use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
         run::<Secp256k1, BnScalar>();
-        // run::<Secp256k1, PastaFp>();
-        // run::<Secp256k1, PastaFq>();
     }
 }
