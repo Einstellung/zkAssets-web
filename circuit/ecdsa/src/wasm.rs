@@ -35,12 +35,39 @@ fn copy_to_u8array(v: &Vec<u8>) -> Uint8Array {
     u8_arr
 }
 
+fn normalize_hex_string(input: &str) -> Result<String, String> {
+    let normalized = input
+        .trim()                    // 移除两端空白
+        .to_lowercase()            // 转换为小写
+        .trim_start_matches("0x")  // 移除可能的 0x 前缀
+        .replace(" ", "");         // 移除所有空格
+
+    // 确保长度是 64
+    if normalized.len() != 64 {
+        return Err(format!(
+            "Invalid hex string length: expected 64, got {}",
+            normalized.len()
+        ));
+    }
+
+    // 验证是否都是有效的十六进制字符
+    if !normalized.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid hex characters found".to_string());
+    }
+
+    Ok(normalized)
+}
+
 /// 从外部输入的大端序 hex 字符串转换为曲线上的点
 fn parse_public_key<C: CurveAffine>(pubkey_x: &str, pubkey_y: &str) -> Result<C, JsValue> {
-    // Convert hex strings to field elements (from big-endian)
-    let x_big = big_uint::from_str_radix(pubkey_x.trim(), 16)
+    let x_str = normalize_hex_string(pubkey_x)
         .map_err(|e| JsValue::from_str(&format!("Invalid x coordinate: {}", e)))?;
-    let y_big = big_uint::from_str_radix(pubkey_y.trim(), 16)
+    let y_str = normalize_hex_string(pubkey_y)
+        .map_err(|e| JsValue::from_str(&format!("Invalid y coordinate: {}", e)))?;
+
+    let x_big = big_uint::from_str_radix(&x_str, 16)
+        .map_err(|e| JsValue::from_str(&format!("Invalid x coordinate: {}", e)))?;
+    let y_big = big_uint::from_str_radix(&y_str, 16)
         .map_err(|e| JsValue::from_str(&format!("Invalid y coordinate: {}", e)))?;
 
     let x: C::Base = big_to_fe(x_big);
@@ -64,20 +91,20 @@ pub fn generate_proof(
     pubkey_x: String,
     pubkey_y: String,
 ) -> Result<Uint8Array, JsValue> {
-    log("Generating proof...");
+    log("Starting proof generation...");
 
-    // 转换输入值
     let msg_hash = hex_to_scalar::<Secp256k1Affine>(&message_hash)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        .map_err(|e| JsValue::from_str(&format!("Message hash conversion failed: {}", e)))?;
+    
     let r = hex_to_scalar::<Secp256k1Affine>(&signature_r)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        .map_err(|e| JsValue::from_str(&format!("Signature R conversion failed: {}", e)))?;
+    
     let s = hex_to_scalar::<Secp256k1Affine>(&signature_s)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let public_key =
-        parse_public_key::<Secp256k1Affine>(&pubkey_x, &pubkey_y)?;
+        .map_err(|e| JsValue::from_str(&format!("Signature S conversion failed: {}", e)))?;
+    
+    let public_key = parse_public_key::<Secp256k1Affine>(&pubkey_x, &pubkey_y)?;
+    log("✅ Input parameters successfully parsed and validated");
 
-
-    // 创建电路
     let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(OsRng).to_affine();
     let circuit = TestCircuitEcdsaVerify::<Secp256k1Affine, BnScalar> {
         public_key: Value::known(public_key),
@@ -87,16 +114,27 @@ pub fn generate_proof(
         window_size: 4,
         ..Default::default()
     };
+    log("✅ Circuit successfully constructed");
 
-    let params_bytes = include_bytes!("perpetual-powers-of-tau-18");
+    let params_bytes = include_bytes!("kzg_bn254_18.srs");
+    log(&format!("Loading KZG parameters (size: {} bytes)...", params_bytes.len()));
+    
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params_bytes[..]))
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        .map_err(|e| JsValue::from_str(&format!(
+            "Failed to read KZG parameters (size: {} bytes): {}", 
+            params_bytes.len(), 
+            e
+        )))?;
+    log("✅ KZG parameters successfully loaded");
 
-    // 生成验证密钥和证明密钥
-    let vk = keygen_vk(&params, &circuit).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let pk = keygen_pk(&params, vk, &circuit).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let vk = keygen_vk(&params, &circuit)
+        .map_err(|e| JsValue::from_str(&format!("Failed to generate verification key: {}", e)))?;
+    log("✅ Verification key generated");
+    
+    let pk = keygen_pk(&params, vk, &circuit)
+        .map_err(|e| JsValue::from_str(&format!("Failed to generate proving key: {}", e)))?;
+    log("✅ Proving key generated");
 
-    // 生成证明
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(vec![]);
     create_proof::<
         KZGCommitmentScheme<Bn256>,
@@ -109,15 +147,16 @@ pub fn generate_proof(
         &params,
         &pk,
         &[circuit],
-        &[&[]], // 空的公共输入
+        &[&[]], 
         OsRng,
         &mut transcript,
     )
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    .map_err(|e| JsValue::from_str(&format!("Failed to create proof: {}", e)))?;
+    log("✅ Proof successfully created");
 
-    // 获取证明数据
     let proof = transcript.finalize();
-
+    log(&format!("✅ Final proof size: {} bytes", proof.len()));
+    
     Ok(copy_to_u8array(&proof))
 }
 

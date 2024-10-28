@@ -42,6 +42,18 @@ export default function EcdsaVerifier({ wasmLoaded }: EcdsaVerifierProps) {
     }
   };
 
+  const testData = {
+    messageHash: "3dce4c209ac60432a2ea09df4f6ebbea491a6cbbf1119c1e27ca8e9b5a1d7fc5",
+    signatureR: "c48fbc06d80bdc4a04ede1bb9365fd08f4b5067147233284e3bd89242be47fb0",
+    signatureS: "591e1fa44b00de3b04296b1ee8b6513b562f410cad76c21c57c8525afffab430",
+    pubkeyX: "b4adfc73ebf5417832d640dc8a37e200bc0296fba2235c730753e56c3b1d08f9",
+    pubkeyY: "ffd89be8528b8e610aabe19e3be7e0b92f426f6f12979fa129f262c7e02e2ab5"
+  };
+
+  const fillTestData = () => {
+    setInputs(testData);
+  };
+
   return (
     <div className="w-full max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-6">ECDSA Proof Generator</h2>
@@ -49,76 +61,85 @@ export default function EcdsaVerifier({ wasmLoaded }: EcdsaVerifierProps) {
       {!wasmLoaded ? (
         <div className="text-center py-4">Loading WASM module...</div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Message Hash</label>
-            <input
-              type="text"
-              name="messageHash"
-              value={inputs.messageHash}
-              onChange={handleInputChange}
-              className="w-full p-2 border rounded"
-              placeholder="Enter message hash (hex)"
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Signature R</label>
-              <input
-                type="text"
-                name="signatureR"
-                value={inputs.signatureR}
-                onChange={handleInputChange}
-                className="w-full p-2 border rounded"
-                placeholder="Signature R (hex)"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Signature S</label>
-              <input
-                type="text"
-                name="signatureS"
-                value={inputs.signatureS}
-                onChange={handleInputChange}
-                className="w-full p-2 border rounded"
-                placeholder="Signature S (hex)"
-              />
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Public Key X</label>
-              <input
-                type="text"
-                name="pubkeyX"
-                value={inputs.pubkeyX}
-                onChange={handleInputChange}
-                className="w-full p-2 border rounded"
-                placeholder="Public Key X (hex)"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Public Key Y</label>
-              <input
-                type="text"
-                name="pubkeyY"
-                value={inputs.pubkeyY}
-                onChange={handleInputChange}
-                className="w-full p-2 border rounded"
-                placeholder="Public Key Y (hex)"
-              />
-            </div>
-          </div>
-
+        <>
           <button
-            type="submit"
-            className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+            type="button"
+            onClick={fillTestData}
+            className="mb-4 px-4 py-2 bg-gray-200 rounded"
           >
-            Generate Proof
+            Fill Test Data
           </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Message Hash</label>
+              <input
+                type="text"
+                name="messageHash"
+                value={inputs.messageHash}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+                placeholder="Enter message hash (hex)"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Signature R</label>
+                <input
+                  type="text"
+                  name="signatureR"
+                  value={inputs.signatureR}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded"
+                  placeholder="Signature R (hex)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Signature S</label>
+                <input
+                  type="text"
+                  name="signatureS"
+                  value={inputs.signatureS}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded"
+                  placeholder="Signature S (hex)"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Public Key X</label>
+                <input
+                  type="text"
+                  name="pubkeyX"
+                  value={inputs.pubkeyX}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded"
+                  placeholder="Public Key X (hex)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Public Key Y</label>
+                <input
+                  type="text"
+                  name="pubkeyY"
+                  value={inputs.pubkeyY}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded"
+                  placeholder="Public Key Y (hex)"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+            >
+              Generate Proof
+            </button>
+          </form>
+        </>
       )}
 
       {error && (
