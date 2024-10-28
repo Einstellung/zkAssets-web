@@ -1,4 +1,4 @@
-// download from https://github.com/han0110/halo2-kzg-srs instead, won't compile by myself.
+// download from https://docs.axiom.xyz/docs/transparency-and-security/kzg-trusted-setup instead, won't compile by myself.
 use std::marker::PhantomData;
 use std::fs::File;
 use ecc::halo2;
