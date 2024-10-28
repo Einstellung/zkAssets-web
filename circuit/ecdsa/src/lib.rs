@@ -1,7 +1,8 @@
 pub mod ecdsa;
 pub mod utils;
 pub mod wasm;
-pub mod params;
+mod params;
+mod pv_key;
 
 pub(crate) use ecc::halo2;
 pub(crate) use ecc::integer;
